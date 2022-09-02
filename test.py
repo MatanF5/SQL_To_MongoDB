@@ -71,7 +71,7 @@ def exist_and_strip(element):
     if '\'' in element:
         element = element.strip('\'')
     
-    return element
+    return TRIM(element)
 
 
 def parser_list(elements):
@@ -328,17 +328,59 @@ def parser_where(where_sec):
         translated_logics = check_math_logics(list_where_elements)
         return translated_logics
 
+def check_aggregation(element):
+    start = find_all_occurances('\(', element)
+    end = find_all_occurances('\)', element)
+    if len(start) == 0:
+        return None
+
+    start = start[0]
+    end = end[0]
+
+    operation = element[:start]
+
+    if end+1 == len(element):
+        name = operation
+    elif 'as' in element:
+        print(element)
+        print(TRIM(TRIM(element[end+1:]).strip('as')))
+        name = exist_and_strip(TRIM(TRIM(element[end+1:]).strip('as')))
+    else:
+        name = exist_and_strip(TRIM(element[end+1:]))
+    
+    op_on = element[start+1:end]
+    t = {
+        name:{
+            f'${operation}': f'${op_on}'
+        }
+    }
+    return t
+
+    # if element.startswith('min')
 def multi_group_by(names, conditionals):
     match_dict = {
         '$match': conditionals
     }
     temp ={
-        '$group':{'_id': {name:f'${name}' for name in names}}
+        '$group':{'_id': {}}
     }
+    disp_names = []
+    for name in names:
+        res = check_aggregation(name)
+        if not res:
+            temp['$group']['_id'][name] = f'${name}'
+        else:
+            name = list(res.keys())[0]
+
+            temp['$group']['_id'][name] = res[name]
+        
+        disp_names.append(name)
+    pprint(temp)
     temp1 = {
-        '$project': {name:f'$_id.{name}' for name in names}
+        '$project': {name:f'$_id.{name}' for name in disp_names}
     }
     temp1['$project']['_id'] = 0
+    pprint(temp1)
     
     return [match_dict, temp, temp1]
     
@@ -350,9 +392,9 @@ collections = mydb.list_collection_names()
  
 
     # nested_indexes = check_nested(list_where_elements)
-
-s = "Select DISTINCT name, address from customers where num = 5 or name = 'Amy'"   
-# s = "Select name, address from customers where name like '^J' or (name not like 'y$' and address not like '^S')"
+# DISTINCT
+s = "Select name, address, sum(num) from customers where num = 5 or name = 'Amy'"   
+s = "Select name, address, sum(num) from customers where name like '^J' or (name not like 'y$' and address not like '^S')"
 # s = "Select name, address from customers where num = 5 or name not in ['John', 'Chuck', 'Susan']"
 # s = "Select name, address from customers where num != 4 or (name = 'Amy' and address = 'Apple st 652')"
 # s = "Select name, address from customers where num = 5 and (name = 'John' or name = 'Amy')"
@@ -367,17 +409,30 @@ if sql_dict['from'] in collections:
 else:
     print(f"{sql_dict['from']} collection not found")
 
+distinct_names = [TRIM(str(key)) for key, val in que['present'].items() if val ==1]
 if sql_dict['select']['distinct']:
 
-    distinct_names = [TRIM(str(key)) for key, val in que['present'].items() if val ==1]
-   
     if len(distinct_names) == 1:
         for x in mycol.distinct(distinct_names[0], que['conditionals']):
             print(x)
     else:
         for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
             print(x)
-else:
 
-    for x in mycol.find(que['conditionals'], que['present']):
-        print(x)
+else:
+    to_stop = False
+    for name in distinct_names:
+        for agr in ['min', 'max', 'sum', 'avg']:
+            if agr in name:
+                for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
+                    print(x)
+                to_stop = True
+                break
+
+        if to_stop:
+            break
+            
+    if not to_stop:
+
+        for x in mycol.find(que['conditionals'], que['present']):
+            print(x)
