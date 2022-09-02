@@ -102,7 +102,7 @@ def translate_symbol(symbol):
     
 
 def find_all_occurances(sub, sql_query):
-    return [sub.start() for sub in re.finditer(sub, sql_query.lower())]
+    return [sub.start() for sub in re.finditer(sub.lower(), sql_query.lower())]
 
 def create_one_struct(start_index, end_index, sql_query):
     query_sec = sql_query[start_index:end_index]
@@ -148,6 +148,7 @@ def create_one_struct(start_index, end_index, sql_query):
         one_query['select'] = {}
         if distinct_index:
             one_query['select']['distinct'] = True
+            start_index += len('distinct') +2
         else:
             one_query['select']['distinct'] = False
 
@@ -197,8 +198,8 @@ def SelectQue(sql_dict):
                 que['present'][x] = 1 
         else:
             que['present'][hold] = 1 
-    
-    que['conditionals'] = parser_where(sql_dict['where'])
+    if sql_dict['where']:
+        que['conditionals'] = parser_where(sql_dict['where'])
     return que
 
     
@@ -260,7 +261,7 @@ def check_math_logics(elements):
 
 
 def parser_where(where_sec):
-   
+    print(where_sec)
     if 'and' in where_sec or 'or' in where_sec:
         if 'and' in where_sec and 'or' in where_sec:
             and_index  = find_all_occurances('and', where_sec)[0]
@@ -327,6 +328,20 @@ def parser_where(where_sec):
         translated_logics = check_math_logics(list_where_elements)
         return translated_logics
 
+def multi_group_by(names, conditionals):
+    match_dict = {
+        '$match': conditionals
+    }
+    temp ={
+        '$group':{'_id': {name:f'${name}' for name in names}}
+    }
+    temp1 = {
+        '$project': {name:f'$_id.{name}' for name in names}
+    }
+    temp1['$project']['_id'] = 0
+    
+    return [match_dict, temp, temp1]
+    
 
 
 myclient = pymongo.MongoClient("mongodb://localhost:27017/")
@@ -336,9 +351,9 @@ collections = mydb.list_collection_names()
 
     # nested_indexes = check_nested(list_where_elements)
 
-s = "Select name, address from customers where not num = 5"   
-s = "Select name, address from customers where name like '^J' or (name not like 'y$' and address not like '^S')"
-s = "Select name, address from customers where num = 5 or name not in ['John', 'Chuck', 'Susan']"
+s = "Select DISTINCT name, address from customers where num = 5 or name = 'Amy'"   
+# s = "Select name, address from customers where name like '^J' or (name not like 'y$' and address not like '^S')"
+# s = "Select name, address from customers where num = 5 or name not in ['John', 'Chuck', 'Susan']"
 # s = "Select name, address from customers where num != 4 or (name = 'Amy' and address = 'Apple st 652')"
 # s = "Select name, address from customers where num = 5 and (name = 'John' or name = 'Amy')"
 # s = "Select name, address from customers where num = 5 or name = 'Amy'"
@@ -353,8 +368,15 @@ else:
     print(f"{sql_dict['from']} collection not found")
 
 if sql_dict['select']['distinct']:
-    for x in mycol.distinct(que['present'], que['conditionals']):
-      print(x)
+
+    distinct_names = [TRIM(str(key)) for key, val in que['present'].items() if val ==1]
+   
+    if len(distinct_names) == 1:
+        for x in mycol.distinct(distinct_names[0], que['conditionals']):
+            print(x)
+    else:
+        for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
+            print(x)
 else:
 
     for x in mycol.find(que['conditionals'], que['present']):
