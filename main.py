@@ -32,7 +32,6 @@ def create_db(mydb):
       { "_id": 1300, "name": "Chuck", "address": "Main Road 989", 'num': 9},
       { "_id": 1400, "name": "Viola", "address": "Sideway 1633", 'num': 50}
     ]
-    print([mycol.insert_one(doc).inserted_id for doc in mylist])
     return mycol
 
 
@@ -41,7 +40,6 @@ def extract_nested_conditinals(seq, operator):
         seq = seq[1:]
     if seq.endswith(')'):
         seq = seq[:-1]
-    print(seq)
     cond1, cond2 = seq.split(operator)
     cond1 = TRIM(cond1)
     cond2 = TRIM(cond2)
@@ -113,7 +111,6 @@ def find_all_occurances(sub, sql_query):
 
 def create_one_struct(start_index, end_index, sql_query):
     query_sec = sql_query[start_index:end_index]
-    print(query_sec)
     one_query = {
         'select':None,
         'delete':None,
@@ -126,12 +123,6 @@ def create_one_struct(start_index, end_index, sql_query):
     select_index = find_all_occurances('select', query_sec)
     delete_index = find_all_occurances('delete', query_sec)
     update_index = find_all_occurances('update', query_sec)
-    # if len(select_index) > 0:
-    #     # found select statemnt
-    # elif len(delete_index) > 0:
-    #     # found delete
-    # else:
-    #     # fpund update
 
     distinct_index = find_all_occurances('DISTINCT', query_sec)
     
@@ -273,8 +264,6 @@ def get_new_values(query):
     last_index = query.find('where')
     get_segment = query[first_index:last_index]
     split = get_segment.split(',')
-    size_split = len(split)
-    count = 0
     que = {'$set':{}}
     
     for seg in split:
@@ -283,7 +272,6 @@ def get_new_values(query):
     return que
 
 def parser_where(where_sec):
-    print(where_sec)
     if 'and' in where_sec or 'or' in where_sec:
         if 'and' in where_sec and 'or' in where_sec:
             and_index  = find_all_occurances('and', where_sec)[0]
@@ -365,8 +353,6 @@ def check_aggregation(element):
     if end+1 == len(element):
         name = operation
     elif 'as' in element:
-        print(element)
-        print(TRIM(TRIM(element[end+1:]).strip('as')))
         name = exist_and_strip(TRIM(TRIM(element[end+1:]).strip('as')))
     else:
         name = exist_and_strip(TRIM(element[end+1:]))
@@ -411,7 +397,6 @@ def multi_group_by(names, conditionals):
             temp['$group'][name] = res[name]
             aggrate_names.append(name)
         
-    pprint(temp)
     temp1 = {
         '$project': {name:f'$_id.{name}' for name in disp_names}
     }
@@ -421,16 +406,12 @@ def multi_group_by(names, conditionals):
 
     temp1['$project']['_id'] = 0
     # temp1['$project']['$sort'] = {"$_id.count":1}
-    pprint(temp1)
     
     return [match_dict, temp, temp1]
     
 
 
-myclient = pymongo.MongoClient("mongodb://localhost:27017/")
-mydb = myclient["mydatabase"]
-collections = mydb.list_collection_names()
-mycol = mydb["customers"]
+
 
     # nested_indexes = check_nested(list_where_elements)
 # DISTINCT
@@ -445,69 +426,68 @@ mycol = mydb["customers"]
 # s = "Select name, address from customers where num = 5 or name not in ['John', 'Chuck', 'Susan']"
 # s = "Select name, address from customers where num != 4 or (name = 'Amy' and address = 'Apple st 652')"
 # s = "Select name, address from customers where num = 5 and (name = 'John' or name = 'Amy')"
-# s = "Select name, address from customers where num = 5 or name = 'Amy'"
+# s = "Select name, address from cu stomers where num = 5 or name = 'Amy'"
 
-sql_dict = create_one_struct(start_index=0, end_index=len(s), sql_query=s)
-
-if sql_dict['delete']:
-    pprint(sql_dict)
-    if sql_dict['where']:
-        cond = parser_where(sql_dict['where'])
-    
-    if sql_dict['from'] in collections:
-        mycol = mydb[sql_dict['from']]
-    
-    x = mycol.delete_many(cond)
-
-    print(x.deleted_count, " documents updated.") 
-
-elif sql_dict['update']:
-    pprint(sql_dict)
-    if sql_dict['where']:
-            filter = parser_where(sql_dict['where'])
-
+if __name__ == "__main__":
+    myclient = pymongo.MongoClient("mongodb://localhost:27017/")
+    mydb = myclient["mydatabase"]
+    collections = mydb.list_collection_names()
     mycol = mydb["customers"]
-
-    newValues = get_new_values(s)
-    print(newValues)
-    print(filter)
-    x = mycol.update_one(filter,newValues)
-
-    #print(x.updated_count, " documents deleted.") 
-
-else: # Select Statement
-    pprint(sql_dict)
-    que = SelectQue(sql_dict)
-
-    if sql_dict['from'] in collections:
-        mycol = mydb[sql_dict['from']]
-    else:
-        print(f"{sql_dict['from']} collection not found")
-
-    distinct_names = [TRIM(str(key)) for key, val in que['present'].items() if val ==1]
-    if sql_dict['select']['distinct']:
-
-        if len(distinct_names) == 1:
-            for x in mycol.distinct(distinct_names[0], que['conditionals']):
-                print(x)
+    create_db(mydb)
+    while True:
+        s = input("Please type your query: ")
+        if s == 'q':
+            exit()
         else:
-            for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
-                print(x)
+            sql_dict = create_one_struct(start_index=0, end_index=len(s), sql_query=s)
+            if sql_dict['delete']:
+                if sql_dict['where']:
+                    cond = parser_where(sql_dict['where'])
+                    
+                if sql_dict['from'] in collections:
+                    mycol = mydb[sql_dict['from']]
+                    
+                x = mycol.delete_many(cond)
 
-    else:
-        to_stop = False
-        for name in distinct_names:
-            for agr in ['min', 'max', 'sum', 'avg', 'count']:
-                if agr in name:
-                    for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
-                        print(x)
-                    to_stop = True
-                    break
+                print(x.deleted_count, " documents updated.") 
+            elif sql_dict['update']:
+                if sql_dict['where']:
+                    filter = parser_where(sql_dict['where'])
+                newValues = get_new_values(s)
+                x = mycol.update_one(filter,newValues)
+            
+            else: # Select Statement
+                que = SelectQue(sql_dict)
 
-            if to_stop:
-                break
-                
-        if not to_stop:
+                if sql_dict['from'] in collections:
+                    mycol = mydb[sql_dict['from']]
+                else:
+                    print(f"{sql_dict['from']} collection not found")
 
-            for x in mycol.find(que['conditionals'], que['present']):
-                print(x)
+                distinct_names = [TRIM(str(key)) for key, val in que['present'].items() if val ==1]
+                if sql_dict['select']['distinct']:
+
+                    if len(distinct_names) == 1:
+                        for x in mycol.distinct(distinct_names[0], que['conditionals']):
+                            print(x)
+                    else:
+                        for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
+                             print(x)
+
+                else:
+                    to_stop = False
+                    for name in distinct_names:
+                        for agr in ['min', 'max', 'sum', 'avg', 'count']:
+                            if agr in name:
+                                for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
+                                    print(x)
+                                to_stop = True
+                                break
+
+                        if to_stop:
+                            break
+                            
+                    if not to_stop:
+                        for x in mycol.find(que['conditionals'], que['present']):
+                            print(x)
+
