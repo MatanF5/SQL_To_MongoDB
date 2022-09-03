@@ -7,7 +7,7 @@ TRIM = lambda x : x.strip()
 
 def create_db(mydb):
 
-    mycol = mydb["customers"]
+    mycol = mydb["telephones"]
 
     mylist = [
     #   { "_id": 100, "name": "John", "address": "Highway 37", 'num': 5},
@@ -17,21 +17,22 @@ def create_db(mydb):
     #   { "_id": 5, "name": "Michael", "address": "Valley 345"},
     #   { "_id": 6, "name": "Sandy", "address": "Ocean blvd 2"},
       
-      { "_id": 2000, "name": "Peter", "address": "Lowstreet 27", 'num': 36},
-      { "_id": 3000, "name": "Amy", "address": "Apple st 652", 'num': 18},
-      { "_id": 4000, "name": "Hannah", "address": "Mountain 21", 'num': 69},
-      { "_id": 5000, "name": "Michael", "address": "Valley 345", 'num': 90},
-      { "_id": 6000, "name": "Sandy", "address": "Ocean blvd 2", 'num': 35},
+      { "_id": 2000, "number": 11111},
+      { "_id": 3000, "number": 222222},
+      { "_id": 4000, "number": 333333},
+      { "_id": 5000, "number": 4444444},
+      { "_id": 6000, "number": 5555555},
 
-      { "_id": 700, "name": "Betty", "address": "Green Grass 1", 'num': 100},
-      { "_id": 800, "name": "Richard", "address": "Sky st 331", 'num': 500},
-      { "_id": 900, "name": "Susan", "address": "One way 98", 'num': 700},
-      { "_id": 10000, "name": "Vicky", "address": "Yellow Garden 2", 'num': 60},
-      { "_id": 1100, "name": "Ben", "address": "Park Lane 38", 'num': 20},
-      { "_id": 1200, "name": "William", "address": "Central st 954", 'num': 1},
-      { "_id": 1300, "name": "Chuck", "address": "Main Road 989", 'num': 9},
-      { "_id": 1400, "name": "Viola", "address": "Sideway 1633", 'num': 50}
+      { "_id": 700, "number": 6666666},
+      { "_id": 800, "number": 7777777},
+      { "_id": 900, "number": 8888888},
+      { "_id": 10000, "number": 999999999},
+      { "_id": 1100, "number": 1010101010},
+      { "_id": 1200, "number": 1111111111111},
+      { "_id": 1300, "number": 12121212},
+      { "_id": 1400, "number": 13131313} 
     ]
+    print([mycol.insert_one(doc).inserted_id for doc in mylist])
     return mycol
 
 
@@ -109,6 +110,44 @@ def translate_symbol(symbol):
 def find_all_occurances(sub, sql_query):
     return [sub.start() for sub in re.finditer(sub.lower(), sql_query.lower())]
 
+
+def parser_from(from_seq):
+    left_join_index = find_all_occurances('left join', from_seq)
+    if len(left_join_index) == 0:
+        return None
+    from_collection = TRIM(from_seq[:left_join_index[0]])
+    left_join_index_end = left_join_index[0]+len('left join ')
+    on_index = find_all_occurances(' on ', from_seq)
+    to_collection = from_seq[left_join_index_end:on_index[0]]
+    
+    on_index_end = on_index[0] + len('on ')
+    from_id,to_id = from_seq[on_index_end:].split('=')
+    lookup_builder = {
+        'from_collection': exist_and_strip(TRIM(from_collection)),
+        'to_collection': exist_and_strip(TRIM(to_collection)),
+        'from_id': exist_and_strip(TRIM(from_id.split('.')[1])),
+        'to_id': exist_and_strip(TRIM(to_id.split('.')[1]))
+    }
+
+    {
+        '$lookup': {
+            'from': lookup_builder['to_collection'], 
+            'localField': f'${lookup_builder["from_id"]}', 
+            'foreignField': f'${lookup_builder["to_id"]}', 
+            'as': 'lookup_result'
+        },
+        # {'$unwind': '$lookup_result'}
+    }
+
+    pprint(lookup_builder)
+    return lookup_builder
+    print('from_collection: ', from_collection)
+    print('to_collection: ', to_collection)
+    print('from_id: ', from_id)
+    print('to_id: ', to_id)
+
+
+
 def create_one_struct(start_index, end_index, sql_query):
     query_sec = sql_query[start_index:end_index]
     one_query = {
@@ -149,7 +188,17 @@ def create_one_struct(start_index, end_index, sql_query):
 
     if len(from_index) >= 1:
         start_index = from_index[0] + len('from') 
-        one_query['from'] = TRIM(query_sec[start_index:end_index])
+        one_query['from'] = {}
+        lookup = parser_from(TRIM(query_sec[start_index:end_index]))
+        if not lookup:
+            one_query['from']['collection'] = TRIM(query_sec[start_index:end_index])
+            one_query['from']['lookup'] = None
+        else:
+            one_query['from']['lookup'] = lookup
+
+        # if not lookup:
+
+        # print("one_query['from']: ", one_query['from'])
         end_index = from_index[0]
 
     if len(select_index) >= 1:
@@ -410,7 +459,7 @@ def multi_group_by(names, conditionals):
     return [match_dict, temp, temp1]
     
 
-
+# def parser_from()
 
 
     # nested_indexes = check_nested(list_where_elements)
@@ -432,24 +481,35 @@ if __name__ == "__main__":
     myclient = pymongo.MongoClient("mongodb://localhost:27017/")
     mydb = myclient["mydatabase"]
     collections = mydb.list_collection_names()
-    mycol = mydb["customers"]
-    create_db(mydb)
+    # mycol = mydb["customers"]
+    # create_db(mydb)
     while True:
         s = input("Please type your query: ")
         if s == 'q':
             exit()
         else:
             sql_dict = create_one_struct(start_index=0, end_index=len(s), sql_query=s)
+            
+            if not sql_dict['from']:
+                hold = s.split(' ') 
+                col = hold[1]
+                mycol = mydb[col]
+                
+            else:
+            
+                if sql_dict['from']['collection'] in collections: 
+                    mycol = mydb[sql_dict['from']['collection']] 
+                else:
+                    print(f"{sql_dict['from']['collection']} collection not found")
+                    continue
+            
             if sql_dict['delete']:
                 if sql_dict['where']:
                     cond = parser_where(sql_dict['where'])
-                    
-                if sql_dict['from'] in collections:
-                    mycol = mydb[sql_dict['from']]
-                    
+                      
                 x = mycol.delete_many(cond)
-
                 print(x.deleted_count, " documents updated.") 
+
             elif sql_dict['update']:
                 if sql_dict['where']:
                     filter = parser_where(sql_dict['where'])
@@ -459,10 +519,10 @@ if __name__ == "__main__":
             else: # Select Statement
                 que = SelectQue(sql_dict)
 
-                if sql_dict['from'] in collections:
-                    mycol = mydb[sql_dict['from']]
-                else:
-                    print(f"{sql_dict['from']} collection not found")
+                # if sql_dict['from']['collection'] in collections:
+                #     mycol = mydb[sql_dict['from']['collection']]
+                # else:
+                #     print(f"{sql_dict['from']} collection not found")
 
                 distinct_names = [TRIM(str(key)) for key, val in que['present'].items() if val ==1]
                 if sql_dict['select']['distinct']:
