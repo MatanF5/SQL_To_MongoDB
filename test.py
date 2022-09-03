@@ -10,20 +10,27 @@ def create_db(mydb):
     mycol = mydb["customers"]
 
     mylist = [
-      { "_id": 100, "name": "John", "address": "Highway 37", 'num': 5},
-      { "_id": 2, "name": "Peter", "address": "Lowstreet 27"},
-      { "_id": 3, "name": "Amy", "address": "Apple st 652"},
-      { "_id": 4, "name": "Hannah", "address": "Mountain 21"},
-      { "_id": 5, "name": "Michael", "address": "Valley 345"},
-      { "_id": 6, "name": "Sandy", "address": "Ocean blvd 2"},
-      { "_id": 7, "name": "Betty", "address": "Green Grass 1"},
-      { "_id": 8, "name": "Richard", "address": "Sky st 331"},
-      { "_id": 9, "name": "Susan", "address": "One way 98"},
-      { "_id": 10, "name": "Vicky", "address": "Yellow Garden 2"},
-      { "_id": 11, "name": "Ben", "address": "Park Lane 38"},
-      { "_id": 12, "name": "William", "address": "Central st 954"},
-      { "_id": 13, "name": "Chuck", "address": "Main Road 989"},
-      { "_id": 14, "name": "Viola", "address": "Sideway 1633"}
+    #   { "_id": 100, "name": "John", "address": "Highway 37", 'num': 5},
+    #   { "_id": 2, "name": "Peter", "address": "Lowstreet 27"},
+    #   { "_id": 3, "name": "Amy", "address": "Apple st 652"},
+    #   { "_id": 4, "name": "Hannah", "address": "Mountain 21"},
+    #   { "_id": 5, "name": "Michael", "address": "Valley 345"},
+    #   { "_id": 6, "name": "Sandy", "address": "Ocean blvd 2"},
+      
+      { "_id": 2000, "name": "Peter", "address": "Lowstreet 27", 'num': 36},
+      { "_id": 3000, "name": "Amy", "address": "Apple st 652", 'num': 18},
+      { "_id": 4000, "name": "Hannah", "address": "Mountain 21", 'num': 69},
+      { "_id": 5000, "name": "Michael", "address": "Valley 345", 'num': 90},
+      { "_id": 6000, "name": "Sandy", "address": "Ocean blvd 2", 'num': 35},
+
+      { "_id": 700, "name": "Betty", "address": "Green Grass 1", 'num': 100},
+      { "_id": 800, "name": "Richard", "address": "Sky st 331", 'num': 500},
+      { "_id": 900, "name": "Susan", "address": "One way 98", 'num': 700},
+      { "_id": 10000, "name": "Vicky", "address": "Yellow Garden 2", 'num': 60},
+      { "_id": 1100, "name": "Ben", "address": "Park Lane 38", 'num': 20},
+      { "_id": 1200, "name": "William", "address": "Central st 954", 'num': 1},
+      { "_id": 1300, "name": "Chuck", "address": "Main Road 989", 'num': 9},
+      { "_id": 1400, "name": "Viola", "address": "Sideway 1633", 'num': 50}
     ]
     print([mycol.insert_one(doc).inserted_id for doc in mylist])
     return mycol
@@ -109,12 +116,23 @@ def create_one_struct(start_index, end_index, sql_query):
     print(query_sec)
     one_query = {
         'select':None,
+        'delete':None,
+        'update':None,
         'from': None,
         'where': None,
         'having': None,
         'group by': None
     }
     select_index = find_all_occurances('select', query_sec)
+    delete_index = find_all_occurances('delete', query_sec)
+    update_index = find_all_occurances('update', query_sec)
+    # if len(select_index) > 0:
+    #     # found select statemnt
+    # elif len(delete_index) > 0:
+    #     # found delete
+    # else:
+    #     # fpund update
+
     distinct_index = find_all_occurances('DISTINCT', query_sec)
     
     
@@ -159,6 +177,12 @@ def create_one_struct(start_index, end_index, sql_query):
             one_query['select']['elements'] = select_statment
         end_index = select_index[0]
     
+    if len(delete_index) >= 1:
+        start_index = delete_index[0] + len('delete') 
+        one_query['delete'] = True
+        
+        
+    
     return one_query
   
 
@@ -198,6 +222,7 @@ def SelectQue(sql_dict):
                 que['present'][x] = 1 
         else:
             que['present'][hold] = 1 
+    
     if sql_dict['where']:
         que['conditionals'] = parser_where(sql_dict['where'])
     return que
@@ -284,9 +309,7 @@ def parser_where(where_sec):
                             minor_cond
                     ]
                 }
-
                 return temp
-            
             else:
                 major1, major2 = [TRIM(major) for major in where_sec.split('or')][:2]
 
@@ -338,6 +361,9 @@ def check_aggregation(element):
     end = end[0]
 
     operation = element[:start]
+    op_on = element[start+1:end]
+    op_on = f'${op_on}'
+    
 
     if end+1 == len(element):
         name = operation
@@ -347,39 +373,57 @@ def check_aggregation(element):
         name = exist_and_strip(TRIM(TRIM(element[end+1:]).strip('as')))
     else:
         name = exist_and_strip(TRIM(element[end+1:]))
+
+    if operation == 'count':
+        operation = 'sum'
+        op_on = 1
     
-    op_on = element[start+1:end]
     t = {
         name:{
-            f'${operation}': f'${op_on}'
+            f'${operation}': op_on
         }
     }
+
+    if name == 'count':
+        pprint(t)
+
     return t
 
-    # if element.startswith('min')
+
+
 def multi_group_by(names, conditionals):
     match_dict = {
         '$match': conditionals
     }
+
     temp ={
         '$group':{'_id': {}}
     }
+
     disp_names = []
+    aggrate_names = []
     for name in names:
         res = check_aggregation(name)
         if not res:
             temp['$group']['_id'][name] = f'${name}'
+            disp_names.append(name)
         else:
             name = list(res.keys())[0]
 
-            temp['$group']['_id'][name] = res[name]
+            # temp['$group']['_id'][name] = res[name]
+            temp['$group'][name] = res[name]
+            aggrate_names.append(name)
         
-        disp_names.append(name)
     pprint(temp)
     temp1 = {
         '$project': {name:f'$_id.{name}' for name in disp_names}
     }
+
+    for name in aggrate_names:
+        temp1['$project'][name] = f'${name}'
+
     temp1['$project']['_id'] = 0
+    # temp1['$project']['$sort'] = {"$_id.count":1}
     pprint(temp1)
     
     return [match_dict, temp, temp1]
@@ -389,50 +433,74 @@ def multi_group_by(names, conditionals):
 myclient = pymongo.MongoClient("mongodb://localhost:27017/")
 mydb = myclient["mydatabase"]
 collections = mydb.list_collection_names()
- 
+
 
     # nested_indexes = check_nested(list_where_elements)
 # DISTINCT
-s = "Select name, address, sum(num) from customers where num = 5 or name = 'Amy'"   
-s = "Select name, address, sum(num) from customers where name like '^J' or (name not like 'y$' and address not like '^S')"
+# s = "Select name, address, count(num) from customers where num = 5 or name = 'Amy'"   
+# s = "Select name, max(num), min(num) from customers"   
+s = "delete from customers where name = 'Viola' and _id > 1000"   
+# s = "select * from customers"
+
+# s = "Select name, address, sum(num) from customers where name like '^J' or (name not like 'y$' and address not like '^S')"
 # s = "Select name, address from customers where num = 5 or name not in ['John', 'Chuck', 'Susan']"
 # s = "Select name, address from customers where num != 4 or (name = 'Amy' and address = 'Apple st 652')"
 # s = "Select name, address from customers where num = 5 and (name = 'John' or name = 'Amy')"
 # s = "Select name, address from customers where num = 5 or name = 'Amy'"
 
 sql_dict = create_one_struct(start_index=0, end_index=len(s), sql_query=s)
-pprint(sql_dict)
-que = SelectQue(sql_dict)
 
-if sql_dict['from'] in collections:
-    mycol = mydb[sql_dict['from']]
+
+if sql_dict['delete']:
+    pprint(sql_dict)
+    if sql_dict['where']:
+        cond = parser_where(sql_dict['where'])
+    
+    
+    if sql_dict['from'] in collections:
+        mycol = mydb[sql_dict['from']]
+    
+    x = mycol.delete_many(cond)
+
+    print(x.deleted_count, " documents deleted.") 
+
+    # do delete here
+
 else:
-    print(f"{sql_dict['from']} collection not found")
 
-distinct_names = [TRIM(str(key)) for key, val in que['present'].items() if val ==1]
-if sql_dict['select']['distinct']:
 
-    if len(distinct_names) == 1:
-        for x in mycol.distinct(distinct_names[0], que['conditionals']):
-            print(x)
+    pprint(sql_dict)
+    que = SelectQue(sql_dict)
+
+    if sql_dict['from'] in collections:
+        mycol = mydb[sql_dict['from']]
     else:
-        for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
-            print(x)
+        print(f"{sql_dict['from']} collection not found")
 
-else:
-    to_stop = False
-    for name in distinct_names:
-        for agr in ['min', 'max', 'sum', 'avg']:
-            if agr in name:
-                for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
-                    print(x)
-                to_stop = True
+    distinct_names = [TRIM(str(key)) for key, val in que['present'].items() if val ==1]
+    if sql_dict['select']['distinct']:
+
+        if len(distinct_names) == 1:
+            for x in mycol.distinct(distinct_names[0], que['conditionals']):
+                print(x)
+        else:
+            for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
+                print(x)
+
+    else:
+        to_stop = False
+        for name in distinct_names:
+            for agr in ['min', 'max', 'sum', 'avg', 'count']:
+                if agr in name:
+                    for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
+                        print(x)
+                    to_stop = True
+                    break
+
+            if to_stop:
                 break
+                
+        if not to_stop:
 
-        if to_stop:
-            break
-            
-    if not to_stop:
-
-        for x in mycol.find(que['conditionals'], que['present']):
-            print(x)
+            for x in mycol.find(que['conditionals'], que['present']):
+                print(x)
