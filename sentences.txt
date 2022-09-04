@@ -1,0 +1,3 @@
+select * from customers left join telephones on customers._id = telephones._id
+select * from customers left join telephones on customers._id = telephones._id where name = 'Susan'
+select name, address, telephones._id from customers left join telephones on customers._id = telephones._id where name = 'Susan'
