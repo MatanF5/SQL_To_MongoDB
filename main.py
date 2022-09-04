@@ -48,19 +48,21 @@ def extract_nested_conditinals(seq, operator):
     return str('$'+operator), *[cond.split(' ') for cond in [cond1, cond2]]
 
 
-def check_nested(checked_list):
-    brackets_indexes = []
+# def check_nested(checked_list):
+#     brackets_indexes = []
     
-    for i, e in enumerate(checked_list):
-        if e == '(' or e == ')':
-            brackets_indexes.append(i)
-    if len(brackets_indexes) > 0:
-        half = len(brackets_indexes) / 2
-        start_indexes = brackets_indexes[:half]
-        end_indexes = brackets_indexes[half:]
-        return [start_indexes.reverse(), end_indexes]
-    return None
+#     for i, e in enumerate(checked_list):
+#         if e == '(' or e == ')':
+#             brackets_indexes.append(i)
+#     if len(brackets_indexes) > 0:
+#         half = len(brackets_indexes) / 2
+#         start_indexes = brackets_indexes[:half]
+#         end_indexes = brackets_indexes[half:]
+#         return [start_indexes.reverse(), end_indexes]
+#     return None
 
+
+TRIM = lambda x : x.strip()
 
 def exist_and_strip(element):
     element = TRIM(element)
@@ -80,6 +82,23 @@ def exist_and_strip(element):
     return TRIM(element)
 
 
+def translate_symbol(symbol):
+    if symbol == '=': return '$eq'
+    if symbol == '<': return '$lt'
+    if symbol == '<=': return '$lte'
+    if symbol == '>': return '$gt'
+    if symbol == '>=': return '$gte'
+    if symbol == '!=': return '$ne'
+    if symbol == 'not': return '$not'
+    if symbol == 'like': return '$regex'
+    if symbol == 'in': return '$in'
+
+
+
+def find_all_occurances(sub, sql_query):
+    return [sub.start() for sub in re.finditer(sub.lower(), sql_query.lower())]
+
+
 def parser_list(elements):
     ll = []
     for e in elements:
@@ -94,59 +113,6 @@ def parser_list(elements):
         ll.append(element)
     return ll
         
-
-def translate_symbol(symbol):
-    if symbol == '=': return '$eq'
-    if symbol == '<': return '$lt'
-    if symbol == '<=': return '$lte'
-    if symbol == '>': return '$gt'
-    if symbol == '>=': return '$gte'
-    if symbol == '!=': return '$ne'
-    if symbol == 'not': return '$not'
-    if symbol == 'like': return '$regex'
-    if symbol == 'in': return '$in'
-    
-
-def find_all_occurances(sub, sql_query):
-    return [sub.start() for sub in re.finditer(sub.lower(), sql_query.lower())]
-
-
-def parser_from(from_seq):
-    left_join_index = find_all_occurances('left join', from_seq)
-    if len(left_join_index) == 0:
-        return None
-    from_collection = TRIM(from_seq[:left_join_index[0]])
-    left_join_index_end = left_join_index[0]+len('left join ')
-    on_index = find_all_occurances(' on ', from_seq)
-    to_collection = from_seq[left_join_index_end:on_index[0]]
-    
-    on_index_end = on_index[0] + len('on ')
-    from_id,to_id = from_seq[on_index_end:].split('=')
-    lookup_builder = {
-        'from_collection': exist_and_strip(TRIM(from_collection)),
-        'to_collection': exist_and_strip(TRIM(to_collection)),
-        'from_id': exist_and_strip(TRIM(from_id.split('.')[1])),
-        'to_id': exist_and_strip(TRIM(to_id.split('.')[1]))
-    }
-
-    {
-        '$lookup': {
-            'from': lookup_builder['to_collection'], 
-            'localField': f'${lookup_builder["from_id"]}', 
-            'foreignField': f'${lookup_builder["to_id"]}', 
-            'as': 'lookup_result'
-        },
-        # {'$unwind': '$lookup_result'}
-    }
-
-    pprint(lookup_builder)
-    return lookup_builder
-    print('from_collection: ', from_collection)
-    print('to_collection: ', to_collection)
-    print('from_id: ', from_id)
-    print('to_id: ', to_id)
-
-
 
 def create_one_struct(start_index, end_index, sql_query):
     query_sec = sql_query[start_index:end_index]
@@ -189,16 +155,15 @@ def create_one_struct(start_index, end_index, sql_query):
     if len(from_index) >= 1:
         start_index = from_index[0] + len('from') 
         one_query['from'] = {}
-        lookup = parser_from(TRIM(query_sec[start_index:end_index]))
+        lookup, collection = parser_from(TRIM(query_sec[start_index:end_index]), one_query['where'], TRIM(query_sec[:from_index[0]]))
         if not lookup:
-            one_query['from']['collection'] = TRIM(query_sec[start_index:end_index])
             one_query['from']['lookup'] = None
+            one_query['from']['collection'] = TRIM(query_sec[start_index:end_index])
         else:
             one_query['from']['lookup'] = lookup
+            one_query['from']['collection'] = collection
 
-        # if not lookup:
 
-        # print("one_query['from']: ", one_query['from'])
         end_index = from_index[0]
 
     if len(select_index) >= 1:
@@ -229,6 +194,62 @@ def create_one_struct(start_index, end_index, sql_query):
     
     return one_query
 
+
+def parser_from(from_seq, where_seq, select_seq, lookup_result_name='lookup_result'):
+    left_join_index = find_all_occurances('left join', from_seq)
+    if len(left_join_index) == 0:
+        return None, None
+    from_collection = TRIM(from_seq[:left_join_index[0]])
+    left_join_index_end = left_join_index[0]+len('left join ')
+    on_index = find_all_occurances(' on ', from_seq)
+    to_collection = from_seq[left_join_index_end:on_index[0]]
+    
+    on_index_end = on_index[0] + len('on ')
+    from_id,to_id = from_seq[on_index_end:].split('=')
+    lookup_builder = {
+        'from_collection': exist_and_strip(TRIM(from_collection)),
+        'to_collection': exist_and_strip(TRIM(to_collection)),
+        'from_id': exist_and_strip(TRIM(from_id.split('.')[1])),
+        'to_id': exist_and_strip(TRIM(to_id.split('.')[1]))
+    }
+    # print(where_seq, not where_seq)
+    if where_seq is None:
+        conditionals = {}
+    else:
+        conditionals = parser_where(where_seq)
+    
+    select_seq = select_seq[len('select'):]
+    
+    project_dict = {'_id':0}
+        
+
+    for disp_name in select_seq.split(','):
+        disp_name = exist_and_strip(TRIM(disp_name))
+      
+        if '.' in disp_name:
+            collection_name, var_name = disp_name.split('.')
+
+            if collection_name == lookup_builder['to_collection']:
+                project_dict[var_name] = f'${lookup_result_name}.{var_name}'
+        else:
+            project_dict[disp_name] = 1
+
+    lookup = [{
+        '$lookup': {
+            'from': f'{lookup_builder["to_collection"]}', 
+            'localField': f'{lookup_builder["from_id"]}', 
+            'foreignField': f'{lookup_builder["to_id"]}', 
+            'as': f'{lookup_result_name}'
+        }},
+        {'$unwind': f'${lookup_result_name}'},
+        
+                
+        {'$match': conditionals},
+        {'$project': project_dict}
+    ]
+
+    # pprint(lookup)
+    return lookup, lookup_builder['from_collection']
 
 
 def SelectQue(sql_dict):
@@ -486,6 +507,7 @@ if __name__ == "__main__":
     while True:
         s = input("Please type your query: ")
         if s == 'q':
+            print('Bye Bye ..')
             exit()
         else:
             sql_dict = create_one_struct(start_index=0, end_index=len(s), sql_query=s)
@@ -496,17 +518,28 @@ if __name__ == "__main__":
                 mycol = mydb[col]
                 
             else:
-            
-                if sql_dict['from']['collection'] in collections: 
-                    mycol = mydb[sql_dict['from']['collection']] 
-                else:
-                    print(f"{sql_dict['from']['collection']} collection not found")
+                if sql_dict['from']['lookup']:
+                    # to lookup
+                    mycol = mydb[sql_dict['from']['collection']]
+                    pprint(sql_dict['from']['lookup'])
+                    for doc in mycol.aggregate(sql_dict['from']['lookup']):
+                        pprint(doc)
                     continue
+
+
+
+                else:
+                    if sql_dict['from']['collection'] in collections: 
+                        mycol = mydb[sql_dict['from']['collection']] 
+                    else:
+                        print(f"{sql_dict['from']['collection']} collection not found")
+                        continue
             
             if sql_dict['delete']:
                 if sql_dict['where']:
                     cond = parser_where(sql_dict['where'])
-                      
+
+                pprint(cond)                      
                 x = mycol.delete_many(cond)
                 print(x.deleted_count, " documents updated.") 
 
@@ -514,6 +547,8 @@ if __name__ == "__main__":
                 if sql_dict['where']:
                     filter = parser_where(sql_dict['where'])
                 newValues = get_new_values(s)
+                pprint(filter)
+                pprint(newValues)
                 x = mycol.update_one(filter,newValues)
             
             else: # Select Statement
@@ -526,6 +561,8 @@ if __name__ == "__main__":
 
                 distinct_names = [TRIM(str(key)) for key, val in que['present'].items() if val ==1]
                 if sql_dict['select']['distinct']:
+                    pprint(distinct_names)
+                    pprint(que['conditionals'])
 
                     if len(distinct_names) == 1:
                         for x in mycol.distinct(distinct_names[0], que['conditionals']):
@@ -539,6 +576,8 @@ if __name__ == "__main__":
                     for name in distinct_names:
                         for agr in ['min', 'max', 'sum', 'avg', 'count']:
                             if agr in name:
+                                pprint(distinct_names)
+                                pprint(que['conditionals'])
                                 for x in mycol.aggregate(multi_group_by(distinct_names, que['conditionals'])):
                                     print(x)
                                 to_stop = True
@@ -548,6 +587,8 @@ if __name__ == "__main__":
                             break
                             
                     if not to_stop:
+                        pprint(que['present'])
+                        pprint(que['conditionals'])
                         for x in mycol.find(que['conditionals'], que['present']):
                             print(x)
 
